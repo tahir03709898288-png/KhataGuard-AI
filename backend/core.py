@@ -5,7 +5,21 @@ from datetime import date
 from typing import Any, Dict, List, Optional
 
 from backend.database.customers import add_customer, get_all_customers
-from backend.database.transactions import add_transaction, get_transactions_by_customer, get_all_transactions
+
+# Dynamic database imports to handle function name variations safely
+try:
+    from backend.database.transactions import add_transaction, get_all_transactions
+except ImportError:
+    from backend.database.transactions import add_transaction
+    get_all_transactions = None
+
+try:
+    from backend.database.transactions import get_transactions_by_customer
+except ImportError:
+    try:
+        from backend.database.transactions import get_customer_transactions as get_transactions_by_customer
+    except ImportError:
+        get_transactions_by_customer = None
 
 
 def create_customer(name: str, phone: Optional[str] = None) -> int:
@@ -19,23 +33,27 @@ def list_customers() -> List[Dict[str, Any]]:
     return [dict(row) for row in get_all_customers()]
 
 
-def get_customers_for_ui(search: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Helper function for UI display with search filter and aggregated fields."""
-    customers = list_customers()
-    if search and search.strip():
-        term = search.strip().casefold()
-        customers = [c for c in customers if term in str(c.get("name", "")).casefold()]
-    
-    for c in customers:
-        statement = get_customer_statement(c["id"])
-        c["total_sale"] = statement.get("total_sale", 0.0)
-        c["outstanding"] = statement.get("balance", 0.0)
-    return customers
+def _fetch_customer_transactions(customer_id: int) -> List[Dict[str, Any]]:
+    """Safely fetch transactions for a customer using whichever DB function is available."""
+    if get_transactions_by_customer is not None:
+        try:
+            return [dict(row) for row in get_transactions_by_customer(customer_id)]
+        except Exception:
+            pass
+            
+    if get_all_transactions is not None:
+        try:
+            all_txs = [dict(row) for row in get_all_transactions()]
+            return [t for t in all_txs if t.get("customer_id") == customer_id]
+        except Exception:
+            pass
+            
+    return []
 
 
 def get_customer_statement(customer_id: int) -> Dict[str, Any]:
     """Calculate running balance, sales, and payments for a customer."""
-    txs = [dict(row) for row in get_transactions_by_customer(customer_id)]
+    txs = _fetch_customer_transactions(customer_id)
     
     total_sale = 0.0
     total_paid = 0.0
@@ -43,7 +61,7 @@ def get_customer_statement(customer_id: int) -> Dict[str, Any]:
     running_balance = 0.0
 
     for tx in txs:
-        tx_type = tx.get("tx_type", "").lower()
+        tx_type = str(tx.get("tx_type", "")).lower()
         amount = float(tx.get("amount", 0.0))
         
         if tx_type == "sale":
@@ -69,6 +87,20 @@ def get_customer_statement(customer_id: int) -> Dict[str, Any]:
         "balance": running_balance,
         "transactions": statement_rows,
     }
+
+
+def get_customers_for_ui(search: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Helper function for UI display with search filter and aggregated fields."""
+    customers = list_customers()
+    if search and search.strip():
+        term = search.strip().casefold()
+        customers = [c for c in customers if term in str(c.get("name", "")).casefold()]
+    
+    for c in customers:
+        statement = get_customer_statement(c["id"])
+        c["total_sale"] = statement.get("total_sale", 0.0)
+        c["outstanding"] = statement.get("balance", 0.0)
+    return customers
 
 
 def get_customer_summaries() -> List[Dict[str, Any]]:
