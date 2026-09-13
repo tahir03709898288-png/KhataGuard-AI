@@ -19,6 +19,21 @@ def list_customers() -> List[Dict[str, Any]]:
     return [dict(row) for row in get_all_customers()]
 
 
+def get_customers_for_ui(search: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Helper function for UI display with search filter and aggregated fields."""
+    customers = list_customers()
+    if search and search.strip():
+        term = search.strip().casefold()
+        customers = [c for c in customers if term in str(c.get("name", "")).casefold()]
+    
+    for c in customers:
+        if "total_sale" not in c:
+            c["total_sale"] = float(c.get("total_sale", 0.0))
+        if "outstanding" not in c:
+            c["outstanding"] = float(c.get("outstanding", 0.0))
+    return customers
+
+
 def record_sale(
     customer_name: str,
     sale_amount: float,
