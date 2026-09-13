@@ -1,4 +1,4 @@
-"""Core business logic for KhataGuard operations with adaptive database signatures."""
+"""Core business logic for KhataGuard operations with exact parameter alignment."""
 from __future__ import annotations
 
 import inspect
@@ -45,42 +45,55 @@ def _safe_add_transaction(
     description: Optional[str] = None,
     transaction_date: Optional[str] = None,
 ) -> int:
-    """Adapts dynamically to whatever arguments add_transaction() expects (tx_type vs type)."""
+    """Invokes add_transaction supporting transaction_type positional/keyword arguments."""
     if add_transaction is None:
         raise RuntimeError("Database add_transaction function not found.")
 
-    params = inspect.signature(add_transaction).parameters
-    kwargs: Dict[str, Any] = {}
+    sig = inspect.signature(add_transaction)
+    params = sig.parameters
 
+    # Case 1: If database function uses exact parameter name 'transaction_type'
+    if "transaction_type" in params:
+        kwargs = {
+            "customer_id": customer_id,
+            "transaction_type": tx_type,
+            "amount": amount,
+            "description": description,
+            "transaction_date": transaction_date,
+        }
+        # Filter kwargs to only pass parameters accepted by add_transaction
+        valid_kwargs = {k: v for k, v in kwargs.items() if k in params}
+        return add_transaction(**valid_kwargs)
+
+    # Case 2: Generic inspect fallback for legacy DB variants
+    kwargs: Dict[str, Any] = {}
     if "customer_id" in params:
         kwargs["customer_id"] = customer_id
     elif "customer_name" in params:
-        # Fallback if DB function takes name instead
         customers = list_customers()
         matched = [c for c in customers if c.get("id") == customer_id]
         if matched:
             kwargs["customer_name"] = matched[0]["name"]
 
-    # Handle type parameter mismatch dynamically
     if "tx_type" in params:
         kwargs["tx_type"] = tx_type
     elif "type" in params:
         kwargs["type"] = tx_type
-    elif "kind" in params:
-        kwargs["kind"] = tx_type
 
     if "amount" in params:
         kwargs["amount"] = amount
-
     if "description" in params:
         kwargs["description"] = description
-
     if "transaction_date" in params:
         kwargs["transaction_date"] = transaction_date
     elif "date" in params:
         kwargs["date"] = transaction_date
 
-    return add_transaction(**kwargs)
+    try:
+        return add_transaction(**kwargs)
+    except TypeError:
+        # Positional arguments fallback if keyword unpacking fails
+        return add_transaction(customer_id, tx_type, amount, description, transaction_date)
 
 
 def _fetch_customer_transactions(customer_id: int) -> List[Dict[str, Any]]:
@@ -108,7 +121,7 @@ def get_customer_statement(customer_id: int) -> Dict[str, Any]:
     running_balance = 0.0
 
     for tx in txs:
-        tx_type = str(tx.get("tx_type") or tx.get("type") or "").lower()
+        tx_type = str(tx.get("transaction_type") or tx.get("tx_type") or tx.get("type") or "").lower()
         amount = float(tx.get("amount", 0.0))
         
         if tx_type == "sale":
