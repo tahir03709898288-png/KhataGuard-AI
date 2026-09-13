@@ -25,7 +25,7 @@ ALLOWED_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
 MAX_AUDIO_BYTES = 24 * 1024 * 1024  # stay below Groq free-tier 25 MB boundary
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 DEFAULT_SPEECH_MODEL = "whisper-large-v3-turbo"
-DEFAULT_VISION_MODEL = "qwen/qwen3.6-27b"
+DEFAULT_VISION_MODEL = "llama-3.2-11b-vision-preview"
 
 
 class MediaProcessingError(RuntimeError):
@@ -178,12 +178,7 @@ def ocr_handwritten_image(
     vision_model: str = DEFAULT_VISION_MODEL,
     timeout: float = 60.0,
 ) -> str:
-    """Read a handwritten khata image into text only using Groq Vision.
-
-    Uses Groq's documented chat-completions vision format directly. This avoids
-    SDK-version differences and returns the real HTTP/API error to the UI.
-    No database write happens here.
-    """
+    """Read a handwritten khata image into text only using Groq Vision."""
     mime = validate_image(image_bytes, filename)
     encoded = base64.b64encode(image_bytes).decode("ascii")
     data_url = f"data:{mime};base64,{encoded}"
@@ -257,6 +252,7 @@ def ocr_handwritten_image(
         raise MediaProcessingError("Image se readable text nahi mila.")
     return text
 
+
 def _call_existing_parser(
     parser: Callable[..., Any],
     text: str,
@@ -306,10 +302,7 @@ def normalize_parser_result(result: Any) -> ParsedTransaction:
     sale, paid = amounts
     if sale == 0 and paid == 0:
         raise MediaProcessingError("Sale ya payment zero se greater honi chahiye.")
-    if sale > 0 and paid > sale:
-        raise MediaProcessingError(
-            "Paid new sale se zyada hai. Purane balance ki payment ko separate payment rakhein."
-        )
+
     return ParsedTransaction(customer=customer.strip(), sale=sale, paid=paid)
 
 
@@ -332,5 +325,5 @@ def parse_with_existing_ai(
     except MediaProcessingError:
         raise
     except Exception as exc:
-        raise MediaProcessingError("Existing Part 3 AI parser transaction samajh nahi saka.") from exc
+        raise MediaProcessingError(f"Existing Part 3 AI parser transaction samajh nahi saka: {str(exc)}") from exc
     return normalize_parser_result(raw)
