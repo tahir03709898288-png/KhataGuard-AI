@@ -71,7 +71,8 @@ def parse_transaction(text: str, api_key: str | None = None, model: str | None =
         max_retries=2
     )
     
-    model_name = model or _setting("GROQ_MODEL", "llama-3.3-70b-versatile")
+    # Updated default fallback model to standard active model string
+    model_name = model or _setting("GROQ_MODEL", "llama3-70b-8192")
 
     system_prompt = (
         "You are an expert financial ledger parser for Urdu, Roman Urdu, Hindi, and English spoken inputs.\n"
