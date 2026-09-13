@@ -5,7 +5,7 @@ from datetime import date
 from typing import Any, Dict, List, Optional
 
 from backend.database.customers import add_customer, get_all_customers
-from backend.database.transactions import add_transaction
+from backend.database.transactions import add_transaction, get_transactions_by_customer, get_all_transactions
 
 
 def create_customer(name: str, phone: Optional[str] = None) -> int:
@@ -27,11 +27,65 @@ def get_customers_for_ui(search: Optional[str] = None) -> List[Dict[str, Any]]:
         customers = [c for c in customers if term in str(c.get("name", "")).casefold()]
     
     for c in customers:
-        if "total_sale" not in c:
-            c["total_sale"] = float(c.get("total_sale", 0.0))
-        if "outstanding" not in c:
-            c["outstanding"] = float(c.get("outstanding", 0.0))
+        statement = get_customer_statement(c["id"])
+        c["total_sale"] = statement.get("total_sale", 0.0)
+        c["outstanding"] = statement.get("balance", 0.0)
     return customers
+
+
+def get_customer_statement(customer_id: int) -> Dict[str, Any]:
+    """Calculate running balance, sales, and payments for a customer."""
+    txs = [dict(row) for row in get_transactions_by_customer(customer_id)]
+    
+    total_sale = 0.0
+    total_paid = 0.0
+    statement_rows = []
+    running_balance = 0.0
+
+    for tx in txs:
+        tx_type = tx.get("tx_type", "").lower()
+        amount = float(tx.get("amount", 0.0))
+        
+        if tx_type == "sale":
+            total_sale += amount
+            running_balance += amount
+        elif tx_type == "payment":
+            total_paid += amount
+            running_balance -= amount
+            
+        statement_rows.append({
+            "id": tx.get("id"),
+            "date": tx.get("transaction_date"),
+            "type": tx_type.upper(),
+            "description": tx.get("description") or "—",
+            "amount": amount,
+            "running_balance": running_balance,
+        })
+
+    return {
+        "customer_id": customer_id,
+        "total_sale": total_sale,
+        "total_paid": total_paid,
+        "balance": running_balance,
+        "transactions": statement_rows,
+    }
+
+
+def get_customer_summaries() -> List[Dict[str, Any]]:
+    """Helper for Reports page to view overall ledger health."""
+    customers = list_customers()
+    summaries = []
+    for c in customers:
+        stmt = get_customer_statement(c["id"])
+        summaries.append({
+            "id": c["id"],
+            "name": c["name"],
+            "phone": c.get("phone") or "—",
+            "total_sale": stmt["total_sale"],
+            "total_paid": stmt["total_paid"],
+            "balance": stmt["balance"],
+        })
+    return summaries
 
 
 def record_sale(
@@ -48,8 +102,6 @@ def record_sale(
         raise ValueError("Sale amount must be greater than zero.")
     if paid_amount < 0:
         raise ValueError("Paid amount cannot be negative.")
-
-    # REMOVED: Rigid check 'paid_amount > sale_amount' deleted to allow debt clearance & advance payments.
 
     t_date = transaction_date or date.today().isoformat()
     customers = list_customers()
