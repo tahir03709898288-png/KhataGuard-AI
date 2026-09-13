@@ -13,7 +13,7 @@ from typing import Any, Callable
 
 
 class IntegrationError(RuntimeError):
-    pass
+    """User-safe exception for transaction integration failures."""
 
 
 def _supports(function: Callable[..., Any], name: str) -> bool:
@@ -31,17 +31,28 @@ def save_confirmed_transaction(
     record_sale: Callable[..., Any],
     record_payment: Callable[..., Any],
 ) -> Any:
-    """Save only after UI confirmation; never called during OCR/transcription."""
-    sale = float(sale)
-    paid = float(paid)
-    if sale < 0 or paid < 0 or (sale == 0 and paid == 0):
-        raise IntegrationError("Sale/payment amounts invalid hain.")
-    if sale > 0 and paid > sale:
-        raise IntegrationError("Paid new sale se zyada nahi ho sakta.")
+    """Save transaction only after UI confirmation.
+    
+    Supports flexible payments where paid amount can be greater than sale amount
+    to account for advance payments and old debt clearances.
+    """
+    try:
+        sale = float(sale)
+        paid = float(paid)
+    except (TypeError, ValueError) as exc:
+        raise IntegrationError("Amount numerical value honi chahiye.") from exc
+
+    if sale < 0 or paid < 0:
+        raise IntegrationError("Amounts negative nahi ho sakte.")
+        
+    if sale == 0 and paid == 0:
+        raise IntegrationError("Sale ya payment mein se kam az kam ek amount zaroori hai.")
+
+    # REMOVED: Rigid check 'if sale > 0 and paid > sale' eliminated to allow full ledger flexibility.
 
     shared = {
         "description": description or None,
-        "transaction_date": transaction_date.isoformat(),
+        "transaction_date": transaction_date.isoformat() if hasattr(transaction_date, "isoformat") else str(transaction_date),
     }
 
     if sale > 0:
