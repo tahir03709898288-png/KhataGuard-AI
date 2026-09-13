@@ -43,7 +43,7 @@ def set_draft(source_text: str, source_kind: str) -> None:
         text=source_text,
         parser=parse_transaction,
         api_key=setting("GROQ_API_KEY"),
-        text_model=setting("GROQ_MODEL", "openai/gpt-oss-20b"),
+        text_model=setting("GROQ_MODEL", "llama-3.3-70b-versatile"),
     )
     st.session_state["p4_draft"] = {
         "customer": result.customer,
@@ -148,7 +148,7 @@ with image_tab:
 
     st.text_area(
         "OCR text (read-only preview)",
-        value=st.session_state.get("p4_ocr_text", ""),
+        value=st.session_state.get("p4_transcript", st.session_state.get("p4_ocr_text", "")),
         height=120,
         disabled=True,
     )
@@ -189,8 +189,11 @@ else:
                 record_sale=record_sale,
                 record_payment=record_payment,
             )
+            # Clear state to prevent duplicates and refresh state UI
             st.session_state.pop("p4_draft", None)
+            st.session_state.pop("p4_transcript", None)
+            st.session_state.pop("p4_ocr_text", None)
             st.success("Transaction database mein save ho gayi.")
-            st.write(saved)
+            st.rerun()
         except Exception as exc:
             st.error(f"Save nahi hui: {exc}")
